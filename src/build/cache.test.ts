@@ -1,6 +1,25 @@
-import { describe, expect, test } from "bun:test";
-import { createGraphBuildCache, createGraphSignature, pruneStaleDocuments } from "./cache";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  createGraphBuildCache,
+  createGraphSignature,
+  loadDiskCache,
+  pruneStaleDocuments,
+  saveDiskCache,
+} from "./cache";
 import type { CollectedRoute } from "./types";
+
+const tempDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    tempDirectories
+      .splice(0)
+      .map((directoryPath) => rm(directoryPath, { recursive: true, force: true })),
+  );
+});
 
 function makeRoute(routePath: string): CollectedRoute {
   return {
@@ -135,5 +154,54 @@ describe("createGraphSignature", () => {
     ];
 
     expect(createGraphSignature(before)).not.toBe(createGraphSignature(after));
+  });
+});
+
+describe("disk cache round-trip", () => {
+  test("persists documents and reloads them into a fresh cache", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "graph-view-disk-cache-"));
+    tempDirectories.push(cacheDir);
+
+    const source = createGraphBuildCache();
+    source.documents.set("/docs/a.md", {
+      mtimeMs: 1000,
+      size: 100,
+      contentHash: "hash-a",
+      inferredTitle: "Page A",
+      rawLinks: ["./b.md", "./c.md"],
+    });
+
+    await saveDiskCache(source, cacheDir);
+
+    const reloaded = createGraphBuildCache(cacheDir);
+    const doc = reloaded.documents.get("/docs/a.md");
+    expect(doc).toBeDefined();
+    expect(doc?.mtimeMs).toBe(1000);
+    expect(doc?.contentHash).toBe("hash-a");
+    expect(doc?.inferredTitle).toBe("Page A");
+    expect(doc?.rawLinks).toEqual(["./b.md", "./c.md"]);
+  });
+
+  test("ignores a cache file with a mismatched schema version", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "graph-view-disk-cache-"));
+    tempDirectories.push(cacheDir);
+
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(
+      join(cacheDir, "cache.json"),
+      JSON.stringify({
+        version: 999,
+        documents: { "/docs/x.md": { mtimeMs: 1, size: 1, contentHash: "x", rawLinks: [] } },
+      }),
+    );
+
+    const cache = createGraphBuildCache(cacheDir);
+    expect(cache.documents.size).toBe(0);
+  });
+
+  test("loadDiskCache is a no-op when the file is missing", () => {
+    const cache = createGraphBuildCache();
+    loadDiskCache(cache, join(tmpdir(), "graph-view-missing-dir"));
+    expect(cache.documents.size).toBe(0);
   });
 });

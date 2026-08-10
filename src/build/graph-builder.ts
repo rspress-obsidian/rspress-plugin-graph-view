@@ -25,7 +25,7 @@ export function buildGraphData(
 
   const links: GraphLink[] = [];
   const seenLinks = new Set<string>();
-  const degreeByRoute = new Map<string, number>();
+  const unresolvedLinks = new Map<string, Set<string>>();
 
   for (const scannedDocument of scannedDocuments) {
     for (const rawLink of scannedDocument.rawLinks) {
@@ -37,6 +37,13 @@ export function buildGraphData(
       );
 
       if (!targetRoute) {
+        const source = scannedDocument.route.routePath;
+        const bucket = unresolvedLinks.get(source);
+        if (bucket) {
+          bucket.add(rawLink);
+        } else {
+          unresolvedLinks.set(source, new Set([rawLink]));
+        }
         continue;
       }
 
@@ -50,19 +57,36 @@ export function buildGraphData(
 
       seenLinks.add(linkKey);
       links.push({ source, target });
-      degreeByRoute.set(source, (degreeByRoute.get(source) ?? 0) + 1);
-      degreeByRoute.set(target, (degreeByRoute.get(target) ?? 0) + 1);
     }
+  }
+
+  if (unresolvedLinks.size > 0) {
+    const lines: string[] = [];
+    for (const [source, targets] of unresolvedLinks) {
+      for (const target of targets) {
+        lines.push(`  ${source} -> ${target}`);
+      }
+    }
+    console.warn(
+      `[rspress-plugin-graph-view] ${unresolvedLinks.size} page(s) reference ${countTargets(unresolvedLinks)} unresolved internal link(s):\n${lines.join("\n")}`,
+    );
   }
 
   const nodes: GraphNode[] = routes.map((route) => ({
     id: route.routePath,
     label: makeNodeLabel(route, titleByRoute.get(route.routePath)),
     routePath: route.routePath,
-    val: Math.max(1, degreeByRoute.get(route.routePath) ?? 1),
   }));
 
   return { nodes, links };
+}
+
+function countTargets(unresolvedLinks: Map<string, Set<string>>): number {
+  let count = 0;
+  for (const targets of unresolvedLinks.values()) {
+    count += targets.size;
+  }
+  return count;
 }
 
 function buildFileAliases(route: CollectedRoute): string[] {

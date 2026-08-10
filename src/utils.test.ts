@@ -27,6 +27,14 @@ describe("normalizeRoutePath", () => {
     expect(normalizeRoutePath("/guide/api/")).toBe("/guide/api");
   });
 
+  test("collapses multiple trailing slashes", () => {
+    expect(normalizeRoutePath("/guide//")).toBe("/guide");
+  });
+
+  test("collapses a root path of only slashes", () => {
+    expect(normalizeRoutePath("//")).toBe("/");
+  });
+
   test("property: result never ends with a trailing slash (except root)", () => {
     fc.assert(
       fc.property(fc.string(), (path) => {

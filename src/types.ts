@@ -2,7 +2,6 @@ export interface GraphNode {
   id: string;
   label: string;
   routePath: string;
-  val: number;
 }
 
 export interface GraphLink {

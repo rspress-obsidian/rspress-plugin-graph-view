@@ -12,7 +12,7 @@ import { buildGraphData } from "./graph-builder";
 import { extractDisplayTitle, extractMarkdownLinks } from "./link-extractor";
 import type { CollectedRoute, GraphBuildOptions, GraphBuildResult } from "./types";
 
-export { createGraphBuildCache } from "./cache";
+export { createGraphBuildCache, loadDiskCache, saveDiskCache } from "./cache";
 export type {
   CollectedRoute,
   GraphBuildDiagnostics,

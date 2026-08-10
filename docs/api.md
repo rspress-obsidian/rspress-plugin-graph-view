@@ -21,6 +21,7 @@ interface RspressPluginGraphViewOptions {
   defaultOpen?: boolean;
   profileBuild?: boolean;
   colors?: GraphViewColors;
+  cacheDir?: string; // directory for the persisted parse cache
 }
 ```
 

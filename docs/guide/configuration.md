@@ -75,7 +75,7 @@ export default function CustomLayout(props) {
 }
 ```
 
-Available color keys: `currentNode`, `currentNodeGlow`, `currentNodeGlowFade`, `currentNodeRing`, `currentNodePulseRing`, `currentNodeGradLight`, `currentLabel`, `node`, `nodeHover`, `nodeShadow`, `nodeGradLight`, `nodeGradHoverLight`, `label`, `labelHover`, `labelShadow`, `link`, `linkHighlight`, `fallbackLinkDim`, `particleColor`, `gridDot`, `hoverRing`, `loaderBorder`, `loaderTop`.
+Available color keys: `currentNode`, `currentLabel`, `node`, `nodeHover`, `label`, `labelHover`, `labelShadow`, `link`, `linkHighlight`, `fallbackLinkDim`, `loaderBorder`, `loaderTop`.
 
 Any unspecified key falls back to the default light or dark palette.
 
@@ -85,12 +85,35 @@ The plugin uses a multi-level caching strategy:
 
 1. **File cache** — Each document is cached by `mtimeMs` + `size`. Unchanged files skip reading and parsing entirely.
 2. **Module cache** — If the graph structure hasn't changed (same files, same content), the serialized virtual module is reused without rebuilding.
-3. **Stale pruning** — Deleted or moved routes are automatically removed from the cache on the next build.
+3. **Disk cache** — Parse results (titles + links) are persisted to `<projectRoot>/node_modules/.cache/rspress-graph-view/cache.json`. Dev-server restarts skip the expensive markdown parsing entirely — only the fast graph resolution runs (~0.5ms for a small site).
+4. **Stale pruning** — Deleted or moved routes are automatically removed from the cache on the next build.
+
+The disk cache location can be overridden with the `cacheDir` plugin option:
+
+```ts
+pluginGraphview({
+  cacheDir: "./.cache/graph-view", // custom cache location
+})
+```
 
 This means:
-- **Cold build**: all files are read and parsed
+- **Cold build** (first run or cache cleared): all files are read and parsed
 - **Warm rebuild** (no changes): ~0ms, fully cached
 - **Single-file change**: only the modified file is re-parsed; the rest hit cache
+- **Dev-server restart**: parse results load from disk; no re-parsing
+
+## Broken Link Diagnostics
+
+During the build, the plugin resolves every internal markdown link to a page. Links that don't resolve to any route (typos, moved files, wrong paths) are reported to the console:
+
+```
+[rspress-plugin-graph-view] 2 page(s) reference 3 unresolved internal link(s):
+  /guide/getting-started -> ./confguration.md
+  /guide/configuration -> ../missing.md
+  /api -> ./guide/typo.md
+```
+
+This is a build-time warning — the build still succeeds, and unresolved links are simply omitted from the graph. It's a useful way to catch dead links in your docs.
 
 ## Peer Dependencies
 

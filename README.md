@@ -9,7 +9,8 @@ Interactive graph visualization for [Rspress](https://rspress.dev/) documentatio
 
 - **Automatic link detection** — uses MDAST parsing to extract all markdown link formats (inline, reference, autolinks) while ignoring links inside code blocks
 - **Click to navigate** — click any node to jump to that page
-- **Hover tooltip** — hovering a node shows its full page title as an HTML overlay
+- **Obsidian-style rendering** — a clean dot-field with neutral gray nodes, thin straight links, and no visual noise; labels appear on hover or zoom
+- **Hover interactions** — hovering a node highlights its connections and changes its fill; the cursor turns to a pointer over clickable nodes
 - **Stats bar** — the panel footer displays the current node and link count
 - **Dark mode** — seamlessly adapts to light and dark themes
 - **Build caching** — incremental rebuilds with mtime-based cache invalidation
@@ -55,8 +56,6 @@ pluginGraphview({
   // Override any canvas color token (all keys optional)
   colors: {
     currentNode: "#f59e0b",
-    currentNodeGlow: "rgba(245, 158, 11, 0.25)",
-    currentNodeGlowFade: "rgba(245, 158, 11, 0)",
     node: "#94a3b8",
     link: "rgba(100, 116, 139, 0.35)",
   },
@@ -86,26 +85,15 @@ Every visual token used by the canvas renderer can be overridden via the `colors
 | Key | Description |
 | --- | --- |
 | `currentNode` | Fill color of the active page node |
-| `currentNodeGlow` | Inner glow color (with opacity) |
-| `currentNodeGlowFade` | Transparent edge of the outer glow gradient |
-| `currentNodeRing` | Pulsing ring stroke color |
-| `currentNodePulseRing` | Animated pulse ring color; include `ALPHA` as the opacity placeholder |
-| `currentNodeGradLight` | Highlight color for the active node radial gradient |
 | `currentLabel` | Label color of the active page node |
 | `node` | Default node fill color |
 | `nodeHover` | Node fill on hover |
-| `nodeShadow` | Node drop shadow |
-| `nodeGradLight` | Highlight color for default node gradients |
-| `nodeGradHoverLight` | Highlight color for hovered node gradients |
 | `label` | Default label text color |
 | `labelHover` | Label text color on hover |
 | `labelShadow` | Label shadow/backplate color used for contrast |
 | `link` | Default link stroke color |
 | `linkHighlight` | Link stroke color when a connected node is hovered |
 | `fallbackLinkDim` | Dimmed link color when hovering unrelated nodes |
-| `particleColor` | Directional particle color on links |
-| `gridDot` | Background grid dot color |
-| `hoverRing` | Ring stroke color around hovered nodes |
 | `loaderBorder` | Loading spinner border color |
 | `loaderTop` | Loading spinner active segment color |
 

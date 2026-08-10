@@ -54,15 +54,10 @@ export function extractDisplayTitle(source: string): string | undefined {
 function cleanLinkTarget(rawLink: string): string {
   const hashIndex = rawLink.indexOf("#");
   const queryIndex = rawLink.indexOf("?");
-  let end = rawLink.length;
-
-  if (hashIndex !== -1 && hashIndex < end) {
-    end = hashIndex;
-  }
-
-  if (queryIndex !== -1 && queryIndex < end) {
-    end = queryIndex;
-  }
+  const end = Math.min(
+    hashIndex === -1 ? rawLink.length : hashIndex,
+    queryIndex === -1 ? rawLink.length : queryIndex,
+  );
 
   const cleaned = rawLink.slice(0, end).trim();
   if (cleaned.startsWith("<") && cleaned.endsWith(">")) {
@@ -78,11 +73,6 @@ function normalizeReferenceIdentifier(identifier: string): string {
 
 function isInternalDocLink(link: string): boolean {
   return Boolean(
-    link &&
-      !link.startsWith("#") &&
-      !link.startsWith("http://") &&
-      !link.startsWith("https://") &&
-      !link.startsWith("mailto:") &&
-      !link.startsWith("tel:"),
+    link && !link.startsWith("#") && !link.startsWith("//") && !/^[a-z][a-z0-9+.-]*:/i.test(link),
   );
 }

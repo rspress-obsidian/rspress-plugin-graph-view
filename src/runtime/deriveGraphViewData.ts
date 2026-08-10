@@ -19,10 +19,20 @@ export interface DerivedGraphViewData {
   nodes: ForceGraphNode[];
   links: ForceGraphLink[];
   isLargeGraph: boolean;
+  /** True when the current route has no neighbors (isolated page) */
+  isEmpty: boolean;
 }
 
 export const LARGE_GRAPH_NODE_THRESHOLD = 80;
 export const LARGE_GRAPH_LINK_THRESHOLD = 160;
+
+/** Normalize a browser pathname (which may carry a `.html` suffix and trailing slashes) to a graph node id. */
+export function normalizeClientRoutePath(pathname: string): string {
+  const withoutHtml = pathname.replace(/\.html$/, "");
+  const trimmed = withoutHtml.replace(/\/+$/, "");
+  const withoutIndex = trimmed.replace(/\/index$/, "");
+  return withoutIndex || "/";
+}
 
 export function createGraphIndex(graphData: GraphData): GraphIndex {
   const nodeById = new Map<string, GraphNode>();
@@ -51,7 +61,6 @@ export function createGraphIndex(graphData: GraphData): GraphIndex {
 }
 
 export function deriveGraphViewData(
-  graphData: GraphData,
   graphIndex: GraphIndex,
   currentRoutePath: string,
 ): DerivedGraphViewData {
@@ -59,17 +68,10 @@ export function deriveGraphViewData(
 
   if (!currentNode) {
     return {
-      nodes: graphData.nodes.map((node) => ({
-        ...node,
-        isCurrent: false,
-      })),
-      links: graphData.links.map((link) => ({
-        source: link.source,
-        target: link.target,
-      })),
-      isLargeGraph:
-        graphData.nodes.length > LARGE_GRAPH_NODE_THRESHOLD ||
-        graphData.links.length > LARGE_GRAPH_LINK_THRESHOLD,
+      nodes: [],
+      links: [],
+      isLargeGraph: false,
+      isEmpty: true,
     };
   }
 
@@ -94,11 +96,23 @@ export function deriveGraphViewData(
     target: link.target,
   }));
 
+  const isEmpty = links.length === 0;
+  if (isEmpty) {
+    return {
+      nodes,
+      links,
+      isLargeGraph: false,
+      isEmpty: true,
+    };
+  }
+
+  const nodeCount = nodes.length;
+  const linkCount = links.length;
   return {
     nodes,
     links,
-    isLargeGraph:
-      nodes.length > LARGE_GRAPH_NODE_THRESHOLD || links.length > LARGE_GRAPH_LINK_THRESHOLD,
+    isLargeGraph: nodeCount > LARGE_GRAPH_NODE_THRESHOLD || linkCount > LARGE_GRAPH_LINK_THRESHOLD,
+    isEmpty: false,
   };
 }
 

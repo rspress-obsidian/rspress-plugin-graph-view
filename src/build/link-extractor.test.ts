@@ -53,6 +53,25 @@ describe("extractMarkdownLinks", () => {
     expect(extractMarkdownLinks(source)).toEqual([]);
   });
 
+  test("ignores non-http schemes", () => {
+    const source = [
+      "Download [file](ftp://files.example.com/guide.md)",
+      "and [data](data:text/plain;base64,SGVsbG8=)",
+      "and [doc](file:///etc/guide.md).",
+    ].join("\n");
+    expect(extractMarkdownLinks(source)).toEqual([]);
+  });
+
+  test("ignores protocol-relative URLs", () => {
+    const source = "See [cdn](//cdn.example.com/guide.md).";
+    expect(extractMarkdownLinks(source)).toEqual([]);
+  });
+
+  test("strips query string before hash fragment", () => {
+    const source = "See [page](./page.md?foo=1#heading).";
+    expect(extractMarkdownLinks(source)).toEqual(["./page.md"]);
+  });
+
   test("ignores bare hash anchor links", () => {
     const source = "Jump to [section](#heading).";
     expect(extractMarkdownLinks(source)).toEqual([]);

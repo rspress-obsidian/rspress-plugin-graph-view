@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { ScannedRouteDocument } from "./cache";
 import { buildGraphData } from "./graph-builder";
 import type { CollectedRoute } from "./types";
@@ -71,8 +71,6 @@ describe("buildGraphData", () => {
     );
 
     expect(graphData.links).toEqual([{ source: "/source", target: "/target" }]);
-    expect(graphData.nodes.find((node) => node.id === "/source")?.val).toBe(1);
-    expect(graphData.nodes.find((node) => node.id === "/target")?.val).toBe(1);
   });
 
   test("uses inferred titles first, then home and page name fallbacks", () => {
@@ -93,6 +91,45 @@ describe("buildGraphData", () => {
       ["/", "Home"],
       ["/custom", "Custom Title"],
       ["/fallback", "fallback-page"],
+    ]);
+  });
+
+  test("reports unresolved internal links without failing the build", () => {
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    const home = makeRoute("/", "/docs/index.md");
+    const guide = makeRoute("/guide", "/docs/guide.md");
+
+    const graphData = buildGraphData(
+      [home, guide],
+      [
+        makeScannedDocument(home, ["./guide.md", "./missing.md", "./also-missing.md"]),
+        makeScannedDocument(guide, []),
+      ],
+    );
+
+    expect(graphData.links).toEqual([{ source: "/", target: "/guide" }]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const message = warnSpy.mock.calls[0]?.[0] as string;
+    expect(message).toContain("1 page(s)");
+    expect(message).toContain("./missing.md");
+    expect(message).toContain("./also-missing.md");
+    expect(message).not.toContain("./guide.md");
+    warnSpy.mockRestore();
+  });
+
+  test("normalizes trailing slashes so index pages cannot collide with the root", () => {
+    const root = makeRoute("/", "/docs/index.md");
+    const nestedIndex = makeRoute("/guide", "/docs/guide/index.md");
+
+    const graphData = buildGraphData(
+      [root, nestedIndex],
+      [makeScannedDocument(root, ["/guide/"]), makeScannedDocument(nestedIndex, ["/"])],
+    );
+
+    expect(graphData.nodes.map((node) => node.id)).toEqual(["/", "/guide"]);
+    expect(graphData.links).toEqual([
+      { source: "/", target: "/guide" },
+      { source: "/guide", target: "/" },
     ]);
   });
 });

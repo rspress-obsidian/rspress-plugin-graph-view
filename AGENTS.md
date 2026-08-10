@@ -60,6 +60,6 @@ This is an **Rspress plugin** that builds an interactive force-directed graph of
 ## Publishing
 
 - `prepublishOnly` runs `build && test`
-- `files: ["src", "theme"]` — test files ship with the package (intentional)
+- `files` lists every shipped source file explicitly — test files are excluded from the tarball
 - `npm pack --dry-run` to verify contents before publish
 - Scoped packages need `publishConfig.access: "public"` — this package is unscoped

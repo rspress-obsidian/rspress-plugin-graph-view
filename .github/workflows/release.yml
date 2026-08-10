@@ -50,9 +50,17 @@ jobs:
       - name: Test
         run: bun test
 
+      - name: Verify release tokens present
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then echo "::error::NPM_TOKEN secret is missing. Add it in Settings -> Secrets -> Actions or the 'release' environment."; exit 1; fi
+          if [ -z "$GITHUB_TOKEN" ]; then echo "::error::GITHUB_TOKEN is empty."; exit 1; fi
+          echo "Both release tokens are present."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ""
         run: npx semantic-release

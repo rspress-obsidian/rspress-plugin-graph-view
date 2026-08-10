@@ -1,10 +1,16 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type {
   CollectedRoute,
   GraphBuildDiagnostics,
   GraphBuildOptions,
   GraphBuildResult,
 } from "./types";
+
+/** Bump when the cached document schema changes to invalidate old caches. */
+const CACHE_SCHEMA_VERSION = 1;
 
 interface CachedRouteDocument {
   mtimeMs: number;
@@ -34,10 +40,53 @@ interface ScannedRouteDocument {
   rawLinks: string[];
 }
 
-export function createGraphBuildCache(): GraphBuildCache {
-  return {
+interface DiskCacheFile {
+  version: number;
+  documents: Record<string, CachedRouteDocument>;
+}
+
+export function createGraphBuildCache(cacheDir?: string): GraphBuildCache {
+  const cache: GraphBuildCache = {
     documents: new Map<string, CachedRouteDocument>(),
   };
+
+  if (cacheDir) {
+    loadDiskCache(cache, cacheDir);
+  }
+
+  return cache;
+}
+
+/** Load persisted parse results from disk (best-effort; never throws). */
+export function loadDiskCache(cache: GraphBuildCache, cacheDir: string): void {
+  const filePath = join(cacheDir, "cache.json");
+  try {
+    const content = readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(content) as DiskCacheFile;
+    if (parsed.version !== CACHE_SCHEMA_VERSION) {
+      return;
+    }
+    for (const [absolutePath, document] of Object.entries(parsed.documents)) {
+      cache.documents.set(absolutePath, document);
+    }
+  } catch {
+    // No cache file yet, or it's corrupt — start fresh.
+  }
+}
+
+/** Persist parse results to disk (best-effort; never throws). */
+export function saveDiskCache(cache: GraphBuildCache, cacheDir: string): Promise<void> {
+  const filePath = join(cacheDir, "cache.json");
+  const payload: DiskCacheFile = {
+    version: CACHE_SCHEMA_VERSION,
+    documents: Object.fromEntries(cache.documents),
+  };
+
+  return mkdir(cacheDir, { recursive: true })
+    .then(() => writeFile(filePath, JSON.stringify(payload)))
+    .catch(() => {
+      // Cache is best-effort; a write failure must not break the build.
+    });
 }
 
 export function pruneStaleDocuments(cache: GraphBuildCache, routes: CollectedRoute[]): void {

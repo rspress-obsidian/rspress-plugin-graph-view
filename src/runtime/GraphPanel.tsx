@@ -54,15 +54,14 @@ function injectKeyframes() {
 export default function GraphPanel({ defaultOpen = false, colors }: GraphPanelProps) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const [isHydrated, setIsHydrated] = useState(false);
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [pos, setPos] = useState({ x: 0, y: 0 });
-  const [isHydrated, setIsHydrated] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [windowSize, setWindowSize] = useState({ width: 1000, height: 800 });
   const [panelSize, setPanelSize] = useState({ width: 320, height: 252 });
-  const [panelVisible, setPanelVisible] = useState(defaultOpen);
+  const [panelVisible, setPanelVisible] = useState(false);
   const [stats, setStats] = useState<{ nodes: number; links: number } | null>(null);
-  const [hoveredLabel, setHoveredLabel] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const graphAreaRef = useRef<HTMLDivElement>(null);
@@ -81,15 +80,24 @@ export default function GraphPanel({ defaultOpen = false, colors }: GraphPanelPr
 
       const storedPos = localStorage.getItem(LOCAL_STORAGE_KEY_POS);
       if (storedPos) setPos(JSON.parse(storedPos));
-    } catch (e) {}
+    } catch {
+      // localStorage may be unavailable (private mode, SSR, storage disabled)
+    }
   }, []);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    setPanelVisible(isOpen);
+  }, [isHydrated, isOpen]);
 
   useEffect(() => {
     if (!isHydrated) return;
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY_OPEN, String(isOpen));
       localStorage.setItem(LOCAL_STORAGE_KEY_POS, JSON.stringify(pos));
-    } catch (e) {}
+    } catch {
+      // localStorage may be unavailable (private mode, SSR, storage disabled)
+    }
   }, [isOpen, pos, isHydrated]);
 
   const handlePointerDown = useCallback(
@@ -106,15 +114,18 @@ export default function GraphPanel({ defaultOpen = false, colors }: GraphPanelPr
     [pos, isFullscreen],
   );
 
-  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDragging.current || isFullscreen) return;
-    const dx = e.clientX - dragStart.current.x;
-    const dy = e.clientY - dragStart.current.y;
-    if (wrapperRef.current) {
-      wrapperRef.current.style.transform = `translate(${dragStart.current.posX + dx}px, ${dragStart.current.posY + dy}px)`;
-      wrapperRef.current.style.transition = "none";
-    }
-  }, [isFullscreen]);
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!isDragging.current || isFullscreen) return;
+      const dx = e.clientX - dragStart.current.x;
+      const dy = e.clientY - dragStart.current.y;
+      if (wrapperRef.current) {
+        wrapperRef.current.style.transform = `translate(${dragStart.current.posX + dx}px, ${dragStart.current.posY + dy}px)`;
+        wrapperRef.current.style.transition = "none";
+      }
+    },
+    [isFullscreen],
+  );
 
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!isDragging.current) return;
@@ -123,7 +134,8 @@ export default function GraphPanel({ defaultOpen = false, colors }: GraphPanelPr
     const dy = e.clientY - dragStart.current.y;
     setPos({ x: dragStart.current.posX + dx, y: dragStart.current.posY + dy });
     if (wrapperRef.current) {
-      wrapperRef.current.style.transition = "bottom 0.4s cubic-bezier(0.25, 1, 0.5, 1), right 0.4s cubic-bezier(0.25, 1, 0.5, 1), width 0.4s cubic-bezier(0.25, 1, 0.5, 1), height 0.4s cubic-bezier(0.25, 1, 0.5, 1), transform 0.4s cubic-bezier(0.25, 1, 0.5, 1)";
+      wrapperRef.current.style.transition =
+        "bottom 0.4s cubic-bezier(0.25, 1, 0.5, 1), right 0.4s cubic-bezier(0.25, 1, 0.5, 1), width 0.4s cubic-bezier(0.25, 1, 0.5, 1), height 0.4s cubic-bezier(0.25, 1, 0.5, 1), transform 0.4s cubic-bezier(0.25, 1, 0.5, 1)";
     }
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     e.currentTarget.style.cursor = "grab";
@@ -147,15 +159,11 @@ export default function GraphPanel({ defaultOpen = false, colors }: GraphPanelPr
 
   useEffect(() => {
     if (isOpen) {
-      setPanelVisible(true);
       const timer = setTimeout(() => {
         const s = graphViewRef.current?.getStats();
         if (s) setStats(s);
         closeButtonRef.current?.focus();
       }, 150);
-      return () => clearTimeout(timer);
-    } else {
-      const timer = setTimeout(() => setPanelVisible(false), 220);
       return () => clearTimeout(timer);
     }
   }, [isOpen]);
@@ -259,7 +267,7 @@ export default function GraphPanel({ defaultOpen = false, colors }: GraphPanelPr
           height: 48,
           borderRadius: "50%",
           border: "none",
-          background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #6366f1 100%)",
+          background: "linear-gradient(135deg, #3f3f3f 0%, #262626 50%, #3f3f3f 100%)",
           color: "#fff",
           cursor: isFullscreen ? "default" : "pointer",
           display: "flex",
@@ -342,341 +350,369 @@ export default function GraphPanel({ defaultOpen = false, colors }: GraphPanelPr
               position: "relative",
               width: "100%",
               height: "100%",
-            borderRadius: isFullscreen ? 0 : 16,
-            overflow: "hidden",
-            background: isFullscreen ? "var(--rp-c-bg, #ffffff)" : "color-mix(in srgb, var(--rp-c-bg, #ffffff) 78%, transparent)",
-            backdropFilter: isFullscreen ? "none" : "blur(20px) saturate(1.5)",
-            WebkitBackdropFilter: isFullscreen ? "none" : "blur(20px) saturate(1.5)",
-            border: isFullscreen ? "none" : "1px solid color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 60%, transparent)",
-            boxShadow: isFullscreen ? "none" : [
-              "0 12px 40px rgba(0,0,0,0.14)",
-              "0 4px 12px rgba(0,0,0,0.06)",
-              "inset 0 1px 0 rgba(255,255,255,0.12)",
-            ].join(", "),
-            animation: isOpen
-              ? "gv-panel-enter 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) forwards"
-              : "none",
-            opacity: isOpen ? 1 : 0,
-            transform: isOpen ? "scale(1) translateY(0)" : "scale(0.92) translateY(8px)",
-            transition: isOpen ? "none" : "opacity 0.2s ease, transform 0.2s ease",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 2,
-              background:
-                "linear-gradient(90deg, transparent, #6366f1, #8b5cf6, #6366f1, transparent)",
-              backgroundSize: "200% 100%",
-              animation: "gv-accent-shimmer 4s linear infinite",
-              zIndex: 2,
-            }}
-          />
-
-          <div
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            style={{
+              borderRadius: isFullscreen ? 0 : 16,
+              overflow: "hidden",
+              background: isFullscreen
+                ? "var(--rp-c-bg, #ffffff)"
+                : "color-mix(in srgb, var(--rp-c-bg, #ffffff) 78%, transparent)",
+              backdropFilter: isFullscreen ? "none" : "blur(20px) saturate(1.5)",
+              WebkitBackdropFilter: isFullscreen ? "none" : "blur(20px) saturate(1.5)",
+              border: isFullscreen
+                ? "none"
+                : "1px solid color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 60%, transparent)",
+              boxShadow: isFullscreen
+                ? "none"
+                : [
+                    "0 12px 40px rgba(0,0,0,0.14)",
+                    "0 4px 12px rgba(0,0,0,0.06)",
+                    "inset 0 1px 0 rgba(255,255,255,0.12)",
+                  ].join(", "),
+              animation: isOpen
+                ? "gv-panel-enter 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) forwards"
+                : "none",
+              opacity: isOpen ? 1 : 0,
+              transform: isOpen ? "scale(1) translateY(0)" : "scale(0.92) translateY(8px)",
+              transition: isOpen ? "none" : "opacity 0.2s ease, transform 0.2s ease",
               display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              height: HEADER_HEIGHT,
-              padding: "0 8px 0 10px",
-              borderBottom:
-                "1px solid color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 40%, transparent)",
-              background: "color-mix(in srgb, var(--rp-c-bg, #ffffff) 50%, transparent)",
-              position: "relative",
-              zIndex: 1,
-              flexShrink: 0,
-              cursor: isFullscreen ? "default" : "grab",
-              touchAction: isFullscreen ? "auto" : "none",
+              flexDirection: "column",
             }}
           >
             <div
               style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 2,
+                background:
+                  "linear-gradient(90deg, transparent, #8f8f8f, #d0d0d0, #8f8f8f, transparent)",
+                backgroundSize: "200% 100%",
+                animation: "gv-accent-shimmer 4s linear infinite",
+                zIndex: 2,
+              }}
+            />
+
+            <div
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
-                color: "var(--rp-c-brand, #6366f1)",
-                opacity: 0.9,
-                userSelect: "none",
+                justifyContent: "space-between",
+                height: HEADER_HEIGHT,
+                padding: "0 8px 0 10px",
+                borderBottom:
+                  "1px solid color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 40%, transparent)",
+                background: "color-mix(in srgb, var(--rp-c-bg, #ffffff) 50%, transparent)",
+                position: "relative",
+                zIndex: 1,
+                flexShrink: 0,
+                cursor: isFullscreen ? "default" : "grab",
+                touchAction: isFullscreen ? "auto" : "none",
               }}
             >
-              <GraphIcon size={13} />
-              <span
-                id={PANEL_TITLE_ID}
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  fontFamily:
-                    "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                }}
-              >
-                Graph View
-              </span>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 1,
-                  background: "color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 35%, transparent)",
-                  borderRadius: 7,
-                  padding: "1px 2px",
-                  border:
-                    "1px solid color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 50%, transparent)",
+                  gap: 6,
+                  color: "var(--rp-c-text-1, #d0d0d0)",
+                  opacity: 0.9,
+                  userSelect: "none",
                 }}
               >
-                <ZoomButton ariaLabel="Zoom in" onClick={() => graphViewRef.current?.zoomIn()}>
+                <GraphIcon size={13} />
+                <span
+                  id={PANEL_TITLE_ID}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    fontFamily:
+                      "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Graph View
+                </span>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    background: "color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 35%, transparent)",
+                    borderRadius: 7,
+                    padding: "1px 2px",
+                    border:
+                      "1px solid color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 50%, transparent)",
+                  }}
+                >
+                  <ZoomButton ariaLabel="Zoom in" onClick={() => graphViewRef.current?.zoomIn()}>
+                    <svg
+                      aria-hidden="true"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    >
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                  </ZoomButton>
+                  <ZoomButton ariaLabel="Zoom out" onClick={() => graphViewRef.current?.zoomOut()}>
+                    <svg
+                      aria-hidden="true"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    >
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                  </ZoomButton>
+                  <ZoomButton
+                    ariaLabel={isFullscreen ? "Restore" : "Maximize"}
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                  >
+                    {isFullscreen ? (
+                      <svg
+                        aria-hidden="true"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+                        <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+                        <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+                        <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+                      </svg>
+                    ) : (
+                      <svg
+                        aria-hidden="true"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                        <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                        <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                        <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+                      </svg>
+                    )}
+                  </ZoomButton>
+                  <ZoomButton
+                    ariaLabel="Reset zoom"
+                    onClick={() => graphViewRef.current?.zoomReset()}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                      <path d="M3 3v5h5" />
+                    </svg>
+                  </ZoomButton>
+                </div>
+
+                <div
+                  style={{
+                    width: 1,
+                    height: 16,
+                    background: "color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 60%, transparent)",
+                    margin: "0 2px",
+                  }}
+                />
+
+                <button
+                  ref={closeButtonRef}
+                  type="button"
+                  onClick={handleClose}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 6,
+                    border: "none",
+                    background: "transparent",
+                    color: "color-mix(in srgb, var(--rp-c-text-2, #64748b) 70%, transparent)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                    transition: "background 0.12s, color 0.12s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background =
+                      "color-mix(in srgb, #ef4444 10%, transparent)";
+                    e.currentTarget.style.color = "#ef4444";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.color =
+                      "color-mix(in srgb, var(--rp-c-text-2, #64748b) 70%, transparent)";
+                  }}
+                  aria-label="Close graph view"
+                >
                   <svg
                     aria-hidden="true"
                     width="12"
                     height="12"
-                    viewBox="0 0 24 24"
+                    viewBox="0 0 12 12"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="2.5"
+                    strokeWidth="1.8"
                     strokeLinecap="round"
                   >
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
+                    <line x1="2" y1="2" x2="10" y2="10" />
+                    <line x1="10" y1="2" x2="2" y2="10" />
                   </svg>
-                </ZoomButton>
-                <ZoomButton ariaLabel="Zoom out" onClick={() => graphViewRef.current?.zoomOut()}>
+                </button>
+              </div>
+            </div>
+
+            <div
+              id={GRAPH_REGION_ID}
+              ref={graphAreaRef}
+              role="img"
+              aria-label={
+                stats
+                  ? `Graph view showing ${stats.nodes} ${stats.nodes === 1 ? "node" : "nodes"} and ${stats.links} ${stats.links === 1 ? "link" : "links"}. Click graph nodes to navigate documentation pages.`
+                  : "Interactive documentation graph loading."
+              }
+              style={{ position: "relative", width: "100%", flex: 1, overflow: "hidden" }}
+            >
+              <GraphView
+                ref={graphViewRef}
+                width={actualWidth}
+                height={graphHeight}
+                onNodeClick={handleNodeClick}
+                colors={colors}
+              />
+
+              {/* Hover tooltip removed for Obsidian-like canvas-only text */}
+            </div>
+
+            <div
+              style={{
+                height: FOOTER_HEIGHT,
+                display: "flex",
+                alignItems: "center",
+                padding: "0 12px",
+                borderTop:
+                  "1px solid color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 35%, transparent)",
+                background: "color-mix(in srgb, var(--rp-c-bg, #ffffff) 40%, transparent)",
+                flexShrink: 0,
+                gap: 4,
+              }}
+            >
+              {stats ? (
+                <>
                   <svg
                     aria-hidden="true"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  >
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                </ZoomButton>
-                <ZoomButton
-                  ariaLabel={isFullscreen ? "Restore" : "Maximize"}
-                  onClick={() => setIsFullscreen(!isFullscreen)}
-                >
-                  {isFullscreen ? (
-                    <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 3v3a2 2 0 0 1-2 2H3" />
-                      <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
-                      <path d="M3 16h3a2 2 0 0 1 2 2v3" />
-                      <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
-                    </svg>
-                  ) : (
-                    <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-                      <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
-                      <path d="M3 16v3a2 2 0 0 0 2 2h3" />
-                      <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-                    </svg>
-                  )}
-                </ZoomButton>
-                <ZoomButton
-                  ariaLabel="Reset zoom"
-                  onClick={() => graphViewRef.current?.zoomReset()}
-                >
-                  <svg
-                    aria-hidden="true"
-                    width="12"
-                    height="12"
+                    width="10"
+                    height="10"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="2"
                     strokeLinecap="round"
-                    strokeLinejoin="round"
+                    style={{
+                      color: "color-mix(in srgb, var(--rp-c-text-2, #a0a0a0) 60%, transparent)",
+                      flexShrink: 0,
+                    }}
                   >
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" />
+                    <circle cx="12" cy="12" r="4" />
                   </svg>
-                </ZoomButton>
-              </div>
-
-              <div
-                style={{
-                  width: 1,
-                  height: 16,
-                  background: "color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 60%, transparent)",
-                  margin: "0 2px",
-                }}
-              />
-
-              <button
-                ref={closeButtonRef}
-                type="button"
-                onClick={handleClose}
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 6,
-                  border: "none",
-                  background: "transparent",
-                  color: "color-mix(in srgb, var(--rp-c-text-2, #64748b) 70%, transparent)",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: 0,
-                  transition: "background 0.12s, color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "color-mix(in srgb, #ef4444 10%, transparent)";
-                  e.currentTarget.style.color = "#ef4444";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                  e.currentTarget.style.color =
-                    "color-mix(in srgb, var(--rp-c-text-2, #64748b) 70%, transparent)";
-                }}
-                aria-label="Close graph view"
-              >
-                <svg
-                  aria-hidden="true"
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                >
-                  <line x1="2" y1="2" x2="10" y2="10" />
-                  <line x1="10" y1="2" x2="2" y2="10" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <div
-            id={GRAPH_REGION_ID}
-            ref={graphAreaRef}
-            role="img"
-            aria-label={
-              stats
-                ? `Graph view showing ${stats.nodes} ${stats.nodes === 1 ? "node" : "nodes"} and ${stats.links} ${stats.links === 1 ? "link" : "links"}. Click graph nodes to navigate documentation pages.`
-                : "Interactive documentation graph loading."
-            }
-            style={{ position: "relative", width: "100%", flex: 1, overflow: "hidden" }}
-          >
-            <GraphView
-              ref={graphViewRef}
-              width={actualWidth}
-              height={graphHeight}
-              onNodeClick={handleNodeClick}
-              colors={colors}
-            />
-
-            {/* Hover tooltip removed for Obsidian-like canvas-only text */}
-          </div>
-
-          <div
-            style={{
-              height: FOOTER_HEIGHT,
-              display: "flex",
-              alignItems: "center",
-              padding: "0 12px",
-              borderTop:
-                "1px solid color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 35%, transparent)",
-              background: "color-mix(in srgb, var(--rp-c-bg, #ffffff) 40%, transparent)",
-              flexShrink: 0,
-              gap: 4,
-            }}
-          >
-            {stats ? (
-              <>
-                <svg
-                  aria-hidden="true"
-                  width="10"
-                  height="10"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  style={{
-                    color: "color-mix(in srgb, var(--rp-c-brand, #6366f1) 60%, transparent)",
-                    flexShrink: 0,
-                  }}
-                >
-                  <circle cx="12" cy="12" r="4" />
-                </svg>
+                  <span
+                    aria-live="polite"
+                    style={{
+                      fontSize: 10,
+                      fontFamily:
+                        "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                      color: "color-mix(in srgb, var(--rp-c-text-2, #64748b) 80%, transparent)",
+                      userSelect: "none",
+                      letterSpacing: "0.02em",
+                    }}
+                  >
+                    {stats.nodes} {stats.nodes === 1 ? "node" : "nodes"}
+                    {" · "}
+                    {stats.links} {stats.links === 1 ? "link" : "links"}
+                  </span>
+                </>
+              ) : (
                 <span
-                  aria-live="polite"
                   style={{
                     fontSize: 10,
+                    color: "color-mix(in srgb, var(--rp-c-text-2, #64748b) 40%, transparent)",
                     fontFamily:
                       "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-                    color: "color-mix(in srgb, var(--rp-c-text-2, #64748b) 80%, transparent)",
                     userSelect: "none",
-                    letterSpacing: "0.02em",
                   }}
                 >
-                  {stats.nodes} {stats.nodes === 1 ? "node" : "nodes"}
-                  {" · "}
-                  {stats.links} {stats.links === 1 ? "link" : "links"}
+                  Loading…
                 </span>
-              </>
-            ) : (
+              )}
+
               <span
                 style={{
+                  marginLeft: "auto",
                   fontSize: 10,
                   color: "color-mix(in srgb, var(--rp-c-text-2, #64748b) 40%, transparent)",
                   fontFamily:
                     "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                   userSelect: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 3,
                 }}
               >
-                Loading…
+                <kbd
+                  style={{
+                    fontSize: 9,
+                    padding: "0px 4px",
+                    borderRadius: 3,
+                    border:
+                      "1px solid color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 60%, transparent)",
+                    background: "color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 20%, transparent)",
+                    lineHeight: "14px",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Esc
+                </kbd>
+                to close
               </span>
-            )}
-
-            <span
-              style={{
-                marginLeft: "auto",
-                fontSize: 10,
-                color: "color-mix(in srgb, var(--rp-c-text-2, #64748b) 40%, transparent)",
-                fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-                userSelect: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: 3,
-              }}
-            >
-              <kbd
-                style={{
-                  fontSize: 9,
-                  padding: "0px 4px",
-                  borderRadius: 3,
-                  border:
-                    "1px solid color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 60%, transparent)",
-                  background: "color-mix(in srgb, var(--rp-c-divider, #e2e8f0) 20%, transparent)",
-                  lineHeight: "14px",
-                  fontFamily: "inherit",
-                }}
-              >
-                Esc
-              </kbd>
-              to close
-            </span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
     </>
   );

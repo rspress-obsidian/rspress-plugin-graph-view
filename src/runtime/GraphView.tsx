@@ -19,7 +19,13 @@ import {
   LIGHT_COLORS,
   mergeColors,
 } from "./canvas/colors";
-import { createGraphIndex, deriveGraphViewData, type ForceGraphNode } from "./deriveGraphViewData";
+import {
+  createGraphIndex,
+  deriveGraphViewData,
+  type ForceGraphLink,
+  type ForceGraphNode,
+  normalizeClientRoutePath,
+} from "./deriveGraphViewData";
 
 export type { GraphViewColors } from "./canvas/colors";
 
@@ -31,14 +37,20 @@ interface GraphViewProps {
   colors?: GraphViewColors;
 }
 
+interface D3ForceHandle {
+  strength?: (value: number) => unknown;
+  distance?: (value: number) => unknown;
+}
+
 interface ForceGraphHandleRef {
   d3ReheatSimulation?: () => void;
-  d3Force?: (forceName: string, forceFn?: any) => any;
+  d3Force?: (forceName: string, forceFn?: D3ForceHandle) => D3ForceHandle | undefined;
   zoom?: {
     (): number;
     (scale: number, durationMs?: number): void;
   };
   zoomToFit?: (durationMs?: number, padding?: number) => void;
+  centerAt?: (x?: number, y?: number, durationMs?: number) => void;
 }
 
 function isDarkMode(): boolean {
@@ -70,7 +82,7 @@ function useTheme(): boolean {
 
 // ─── Error Boundary ────────────────────────────────────────────────
 
-class GraphErrorBoundary extends Component<
+export class GraphErrorBoundary extends Component<
   { children: ReactNode; fallback: ReactNode },
   { hasError: boolean }
 > {
@@ -86,7 +98,15 @@ class GraphErrorBoundary extends Component<
   }
 }
 
-function GraphFallback({ width, height, color }: { width: number; height: number; color: string }) {
+export function GraphFallback({
+  width,
+  height,
+  color,
+}: {
+  width: number;
+  height: number;
+  color: string;
+}) {
   return (
     <div
       style={{
@@ -127,6 +147,7 @@ export interface GraphViewHandle {
   zoomOut: () => void;
   zoomReset: () => void;
   zoomToFit: () => void;
+  centerOnCurrent: () => void;
   getStats: () => { nodes: number; links: number };
 }
 
@@ -142,7 +163,7 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
   const [forceGraphError, setForceGraphError] = useState(false);
   const hoveredNodeRef = useRef<string | null>(null);
   const connectedSetRef = useRef<Set<string>>(new Set());
-  const pulseStartRef = useRef<number>(Date.now());
+  const hoveredLinkRef = useRef<ForceGraphLink | null>(null);
   const forceRef = useRef<ForceGraphHandleRef | null>(null);
   const statsRef = useRef({ nodes: 0, links: 0 });
 
@@ -175,6 +196,12 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
           fg.zoomToFit(300, 16);
         }
       },
+      centerOnCurrent: () => {
+        const fg = forceRef.current;
+        if (fg?.centerAt && currentRoutePathRef.current) {
+          fg.centerAt(0, 0, 0);
+        }
+      },
       getStats: () => ({ ...statsRef.current }),
     }),
     [],
@@ -194,21 +221,35 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
     };
   }, []);
 
-  const currentRoutePath = useMemo(() => {
-    return pathname.replace(/\/$/, "") || "/";
-  }, [pathname]);
+  const currentRoutePath = useMemo(() => normalizeClientRoutePath(pathname), [pathname]);
+
+  const currentRoutePathRef = useRef(currentRoutePath);
+  currentRoutePathRef.current = currentRoutePath;
 
   const graphIndex = useMemo(() => createGraphIndex(graphData), []);
   const {
     nodes: fgNodes,
     links: fgLinks,
     isLargeGraph,
+    isEmpty,
   } = useMemo(() => {
-    const derived = deriveGraphViewData(graphData, graphIndex, currentRoutePath);
+    const derived = deriveGraphViewData(graphIndex, currentRoutePath);
     statsRef.current = { nodes: derived.nodes.length, links: derived.links.length };
     return derived;
   }, [graphIndex, currentRoutePath]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: isEmpty is a stable boolean; only route changes should re-center
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const fg = forceRef.current;
+      if (fg?.centerAt && !isEmpty) {
+        fg.centerAt(0, 0, 300);
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [currentRoutePath, isEmpty]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reheat when the visible graph changes; forceRef is stable
   useEffect(() => {
     // Tweak forces for Obsidian-like physics when data changes
     const timer = setTimeout(() => {
@@ -226,7 +267,7 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
       }
     }, 100);
     return () => clearTimeout(timer);
-  }, [fgNodes, fgLinks, ForceGraph]);
+  }, [fgNodes, fgLinks]);
 
   const handleNodeClick = useCallback(
     (node: { routePath?: string }) => {
@@ -235,6 +276,37 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
       }
     },
     [onNodeClick],
+  );
+
+  const linkEndpoints = useMemo(() => {
+    const map = new WeakMap<object, [string, string]>();
+    for (const link of fgLinks) {
+      map.set(link, [link.source, link.target]);
+    }
+    return map;
+  }, [fgLinks]);
+
+  const getLinkEndpoints = useCallback(
+    (link: object): [string, string] | null => {
+      const endpoints = linkEndpoints.get(link);
+      return endpoints ?? null;
+    },
+    [linkEndpoints],
+  );
+
+  const handleLinkHover = useCallback(
+    (link: { source?: unknown; target?: unknown } | null) => {
+      if (!link) {
+        hoveredLinkRef.current = null;
+        return;
+      }
+      const endpoints = getLinkEndpoints(link);
+      if (!endpoints) {
+        return;
+      }
+      hoveredLinkRef.current = { source: endpoints[0], target: endpoints[1] };
+    },
+    [getLinkEndpoints],
   );
 
   const handleNodeHover = useCallback(
@@ -262,25 +334,9 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
     [colors.currentNode, colors.node],
   );
 
-  const drawBackground = useCallback(
-    (ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const spacing = 24;
-      const dotRadius = 0.6 / globalScale;
-
-      ctx.fillStyle = colors.gridDot;
-      const startX = Math.floor(-width / (2 * globalScale) / spacing) * spacing;
-      const startY = Math.floor(-height / (2 * globalScale) / spacing) * spacing;
-      const endX = -startX + spacing;
-      const endY = -startY + spacing;
-
-      for (let x = startX; x < endX; x += spacing) {
-        for (let y = startY; y < endY; y += spacing) {
-          ctx.fillRect(x - dotRadius, y - dotRadius, dotRadius * 2, dotRadius * 2);
-        }
-      }
-    },
-    [width, height, colors.gridDot],
-  );
+  const drawBackground = useCallback((_ctx: CanvasRenderingContext2D, _globalScale: number) => {
+    // Obsidian-style clean background — no grid, no adornments
+  }, []);
 
   const nodeCanvasObject = useCallback(
     (
@@ -290,21 +346,14 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
     ) => {
       const label = node.label || "";
       const fontSize = Math.max(10, 12) / globalScale;
-      const radius = Math.max(
-        4,
-        Math.min(isLargeGraph ? 6 : 8, node.val * (isLargeGraph ? 1.5 : 2)),
-      );
+      // Obsidian vault: uniform node size regardless of degree
+      const radius = isLargeGraph ? 4 : 5;
       const nx = node.x || 0;
       const ny = node.y || 0;
 
       const isHovered = hoveredNodeRef.current === node.id;
-      const isConnectedToHover = connectedSetRef.current.has(node.id);
-      const hasHover = hoveredNodeRef.current !== null;
-      const dimmed = hasHover && !isConnectedToHover && !node.isCurrent;
 
-      ctx.globalAlpha = dimmed ? 0.2 : 1;
-
-      // Obsidian-like flat node
+      // Flat node dot — Obsidian uses a plain fill, no rings or glow
       ctx.beginPath();
       ctx.arc(nx, ny, radius, 0, Math.PI * 2);
       if (node.isCurrent) {
@@ -316,16 +365,8 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
       }
       ctx.fill();
 
-      // Highlight rings
-      if (node.isCurrent || isHovered) {
-        ctx.beginPath();
-        ctx.arc(nx, ny, radius + 2, 0, Math.PI * 2);
-        ctx.strokeStyle = node.isCurrent ? colors.currentNodeRing : colors.hoverRing;
-        ctx.lineWidth = 1.2 / globalScale;
-        ctx.stroke();
-      }
-
-      const shouldDrawLabel = !isLargeGraph || node.isCurrent || isHovered || globalScale >= 1.4;
+      // Obsidian's graph shows a clean dot-field — labels only on hover or zoom
+      const shouldDrawLabel = node.isCurrent || isHovered || globalScale >= 1.4;
       if (shouldDrawLabel && label) {
         const fontW = node.isCurrent || isHovered ? 600 : 400;
         ctx.font = `${fontW} ${fontSize}px ${FONT_STACK}`;
@@ -336,7 +377,8 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
         ctx.lineJoin = "round";
         ctx.lineWidth = 2 / globalScale;
         ctx.strokeStyle = colors.labelShadow;
-        ctx.strokeText(label, nx, ny + radius + fontSize + 2 / globalScale);
+        const labelY = ny + radius + fontSize + 2 / globalScale;
+        ctx.strokeText(label, nx, labelY);
 
         if (node.isCurrent) {
           ctx.fillStyle = colors.currentLabel;
@@ -345,38 +387,63 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
         } else {
           ctx.fillStyle = colors.label;
         }
-        ctx.fillText(label, nx, ny + radius + fontSize + 2 / globalScale);
+        ctx.fillText(label, nx, labelY);
       }
-
-      ctx.globalAlpha = 1;
     },
     [isLargeGraph, colors],
   );
 
   const linkColor = useCallback(
     (link: { source?: unknown; target?: unknown }) => {
-      if (!hoveredNodeRef.current) return colors.link;
-      const src =
-        typeof link.source === "object" ? (link.source as ForceGraphNode).id : link.source;
-      const tgt =
-        typeof link.target === "object" ? (link.target as ForceGraphNode).id : link.target;
-      const isConnected = src === hoveredNodeRef.current || tgt === hoveredNodeRef.current;
-      return isConnected ? colors.linkHighlight : colors.fallbackLinkDim;
+      const endpoints = getLinkEndpoints(link);
+      if (endpoints) {
+        const [src, tgt] = endpoints;
+        if (hoveredLinkRef.current) {
+          const hovered = hoveredLinkRef.current;
+          if (
+            (src === hovered.source && tgt === hovered.target) ||
+            (src === hovered.target && tgt === hovered.source)
+          ) {
+            return colors.linkHighlight;
+          }
+          return colors.fallbackLinkDim;
+        }
+        if (hoveredNodeRef.current) {
+          const isConnected = src === hoveredNodeRef.current || tgt === hoveredNodeRef.current;
+          return isConnected ? colors.linkHighlight : colors.fallbackLinkDim;
+        }
+      }
+      return colors.link;
     },
-    [colors.link, colors.linkHighlight, colors.fallbackLinkDim],
+    [colors.link, colors.linkHighlight, colors.fallbackLinkDim, getLinkEndpoints],
   );
 
   const linkWidth = useCallback(
     (link: { source?: unknown; target?: unknown }) => {
-      if (!hoveredNodeRef.current) return isLargeGraph ? 0.75 : 1;
-      const src =
-        typeof link.source === "object" ? (link.source as ForceGraphNode).id : link.source;
-      const tgt =
-        typeof link.target === "object" ? (link.target as ForceGraphNode).id : link.target;
-      const isConnected = src === hoveredNodeRef.current || tgt === hoveredNodeRef.current;
-      return isConnected ? 1.8 : isLargeGraph ? 0.5 : 0.6;
+      if (isLargeGraph && !hoveredNodeRef.current && !hoveredLinkRef.current) {
+        return 0.6;
+      }
+      const endpoints = getLinkEndpoints(link);
+      if (endpoints) {
+        const [src, tgt] = endpoints;
+        if (hoveredLinkRef.current) {
+          const hovered = hoveredLinkRef.current;
+          if (
+            (src === hovered.source && tgt === hovered.target) ||
+            (src === hovered.target && tgt === hovered.source)
+          ) {
+            return 1.5;
+          }
+          return isLargeGraph ? 0.4 : 0.5;
+        }
+        if (hoveredNodeRef.current) {
+          const isConnected = src === hoveredNodeRef.current || tgt === hoveredNodeRef.current;
+          return isConnected ? 1.3 : isLargeGraph ? 0.4 : 0.5;
+        }
+      }
+      return isLargeGraph ? 0.6 : 0.8;
     },
-    [isLargeGraph],
+    [isLargeGraph, getLinkEndpoints],
   );
 
   if (forceGraphError) {
@@ -408,6 +475,44 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
     );
   }
 
+  if (isEmpty) {
+    return (
+      <div
+        style={{
+          width,
+          height,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexDirection: "column",
+          gap: 6,
+          color: colors.label,
+          fontFamily: FONT_STACK,
+          fontSize: 13,
+        }}
+      >
+        <svg
+          aria-hidden="true"
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="3" />
+          <line x1="12" y1="5" x2="12" y2="9" />
+          <line x1="12" y1="15" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="9" y2="12" />
+          <line x1="15" y1="12" x2="19" y2="12" />
+        </svg>
+        <span>No linked pages</span>
+      </div>
+    );
+  }
+
   return (
     <GraphErrorBoundary
       fallback={<GraphFallback width={width} height={height} color={colors.label} />}
@@ -422,14 +527,13 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
         nodeCanvasObject={nodeCanvasObject}
         nodeCanvasObjectMode={() => "replace" as const}
         onNodeHover={handleNodeHover as (node: unknown, prevNode: unknown) => void}
+        onLinkHover={handleLinkHover as (link: unknown, prevLink: unknown) => void}
         linkColor={linkColor as (link: object) => string}
         linkWidth={linkWidth as (link: object) => number}
-        linkDirectionalParticles={0}
-        linkDirectionalParticleWidth={0}
-        linkDirectionalParticleColor={() => colors.particleColor}
         onNodeClick={handleNodeClick as (node: unknown, event: MouseEvent) => void}
         onRenderFramePre={drawBackground}
         backgroundColor="transparent"
+        showPointerCursor
         d3AlphaDecay={isLargeGraph ? 0.08 : 0.04}
         d3VelocityDecay={isLargeGraph ? 0.6 : 0.4}
       />

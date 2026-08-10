@@ -1,4 +1,4 @@
 export function normalizeRoutePath(routePath: string): string {
-  const trimmed = routePath.replace(/\/$/, "");
+  const trimmed = routePath.replace(/\/+$/, "");
   return trimmed || "/";
 }

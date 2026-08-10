@@ -3,7 +3,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 if (!globalThis.document) GlobalRegistrator.register();
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { cleanup, render } from "@testing-library/react";
 
 const { mock } = require("bun:test");
@@ -41,6 +41,7 @@ describe("GraphView error boundary", () => {
   });
 
   test("renders fallback UI when a child throws", () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
     const Boom = () => {
       throw new Error("render failure");
     };
@@ -52,6 +53,7 @@ describe("GraphView error boundary", () => {
     );
 
     expect(textIn(container, "Graph view unavailable")).toBe(true);
+    errorSpy.mockRestore();
   });
 
   test("renders children when no error occurs", () => {

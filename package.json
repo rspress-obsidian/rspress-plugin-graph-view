@@ -90,7 +90,7 @@
     "fast-check": "4.7.0",
     "happy-dom": "20.11.2",
     "semantic-release": "25.0.3",
-    "typescript": "6.0.3"
+    "typescript": "7.0.2"
   },
   "sideEffects": false,
   "engines": {
@@ -102,7 +102,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-force-graph-2d": "1.29.1",
-    "typescript": ">=5.0"
+    "typescript": ">=5.0 <7"
   },
   "peerDependenciesMeta": {
     "typescript": {
@@ -116,8 +116,10 @@
   "overrides": {
     "entities": "8.0.0",
     "lodash-es": "4.18.1",
+    "object-assign": "npm:@socketregistry/object-assign@1.0.5",
     "react-router": "7.18.2",
     "react-router-dom": "7.18.2",
+    "react-kapsule": "2.5.7",
     "tar": "7.5.22",
     "ip-address": "10.5.0",
     "brace-expansion": "5.0.9",

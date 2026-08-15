@@ -151,6 +151,13 @@ export interface GraphViewHandle {
   getStats: () => { nodes: number; links: number };
 }
 
+/**
+ * Visual node radius in CSS pixels. Must match the radius used by
+ * `nodeCanvasObject` — the pointer-area painter relies on it so the
+ * hit region exactly matches the rendered dot.
+ */
+const NODE_HIT_RADIUS = 5;
+
 export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
   { width, height, onNodeClick, onNodeHoverChange, colors: customColors },
   ref,
@@ -269,6 +276,25 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
     return () => clearTimeout(timer);
   }, [fgNodes, fgLinks]);
 
+  const nodePointerAreaPaint = useCallback(
+    (
+      node: ForceGraphNode & { x?: number; y?: number },
+      paintColor: string,
+      ctx: CanvasRenderingContext2D,
+    ) => {
+      // The shadow canvas hit-tests by reading the painted pixel color, so
+      // paint the same radius as the visible node. Without this, the default
+      // hit radius (`sqrt(nodeVal) * nodeRelSize + pad`) collapses to ~1px
+      // at `nodeRelSize={1}`, leaving hover/click nearly impossible.
+      const radius = isLargeGraph ? 4 : NODE_HIT_RADIUS;
+      ctx.beginPath();
+      ctx.arc(node.x || 0, node.y || 0, radius, 0, Math.PI * 2);
+      ctx.fillStyle = paintColor;
+      ctx.fill();
+    },
+    [isLargeGraph],
+  );
+
   const handleNodeClick = useCallback(
     (node: { routePath?: string }) => {
       if (node.routePath && onNodeClick) {
@@ -347,7 +373,7 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
       const label = node.label || "";
       const fontSize = Math.max(10, 12) / globalScale;
       // Obsidian vault: uniform node size regardless of degree
-      const radius = isLargeGraph ? 4 : 5;
+      const radius = isLargeGraph ? 4 : NODE_HIT_RADIUS;
       const nx = node.x || 0;
       const ny = node.y || 0;
 
@@ -526,6 +552,14 @@ export default forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
         nodeColor={nodeColor}
         nodeCanvasObject={nodeCanvasObject}
         nodeCanvasObjectMode={() => "replace" as const}
+        nodePointerAreaPaint={
+          nodePointerAreaPaint as (
+            node: unknown,
+            paintColor: string,
+            ctx: CanvasRenderingContext2D,
+            globalScale: number,
+          ) => void
+        }
         onNodeHover={handleNodeHover as (node: unknown, prevNode: unknown) => void}
         onLinkHover={handleLinkHover as (link: unknown, prevLink: unknown) => void}
         linkColor={linkColor as (link: object) => string}
